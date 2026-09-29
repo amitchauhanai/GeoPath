@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GeoPath | Mobile Urban Sensing</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <header class="app-header">
+        <button class="brand" onclick="showPage(1)"><span class="brand-mark">⌁</span><span>GeoPath <small>URBAN SENSING</small></span></button>
+        <div class="header-status"><span class="pulse"></span><span id="connectionLabel">CONNECTING</span><span class="bus-id">BUS 07 / ROUTE 12</span></div>
+        <button class="profile" aria-label="Profile">◉</button>
+    </header>
+
+    <main>
+        <section id="page-1" class="page active camera-page">
+            <div class="page-heading"><div><p class="eyebrow">01 / ONBOARD FEED</p><h1>Live RGB Cam</h1><p class="muted">Front and rear vehicle cameras, synchronized with GPS.</p></div><span class="live-chip">● LIVE</span></div>
+            <div class="camera-grid">
+                <article class="camera-card primary-feed"><div class="feed-label"><span>FRONT CAMERA</span><span id="cameraState">WAITING FOR MOBILE FEED</span></div><canvas id="rgbCanvas" width="1280" height="720"></canvas><div class="feed-footer"><span id="frontLocation">28.6139° N, 77.2090° E</span><span>GPS LOCKED</span></div></article>
+                <article class="camera-card rear-feed"><div class="feed-label"><span>REAR CAMERA</span><span>STANDBY</span></div><canvas id="rearCanvas" width="640" height="360"></canvas><div class="rear-placeholder"><span>◌</span><strong>Rear stream ready</strong><small>Connect a second camera feed to visualize it here.</small></div></article>
+            </div>
+            <div class="quick-strip"><div><span class="metric-label">CURRENT SPEED</span><strong>32 <small>km/h</small></strong></div><div><span class="metric-label">ROAD SEGMENT</span><strong>Ring Road <small>2.4 km tracked</small></strong></div><button onclick="showPage(2)">Open AI Cam <span>↗</span></button></div>
+        </section>
+
+        <section id="page-2" class="page camera-page">
+            <div class="page-heading"><div><p class="eyebrow">02 / EDGE AI</p><h1>Live Segmented Cam</h1><p class="muted">Shared camera feed with road understanding overlays.</p></div><span class="model-chip" id="plateModelState">PLATE CLASS CHECKING</span></div>
+            <div class="ai-layout"><article class="camera-card ai-feed"><div class="feed-label"><span>AI COMPOSITE</span><span id="modelState">MODEL READY</span></div><canvas id="segCanvas" width="1280" height="720"></canvas><div class="feed-footer"><span id="frameSummary">Waiting for frames</span><span id="aiLocation">GPS LOCKED</span></div></article><aside class="control-panel"><div class="panel-kicker">PROCESSING MODE</div><div class="mode-options"><label><input type="checkbox" id="detToggle" checked onchange="syncMode()"><span class="checkmark"></span>Vehicles, people &amp; road signs</label><label><input type="checkbox" id="segToggle" checked onchange="syncMode()"><span class="checkmark"></span>Road segmentation</label></div><div class="panel-divider"></div><div class="panel-kicker">LIVE CLASSES</div><div id="classList" class="class-list"><p class="empty-state">Waiting for model output...</p></div><button class="outline-button" onclick="clearDetections()">Clear session counts</button></aside></div>
+        </section>
+
+        <section id="page-3" class="page map-page">
+            <div id="mainMap"></div><div class="map-overlay map-title"><p class="eyebrow">03 / GIS OPERATIONS</p><h1>PathMap</h1><p>Fleet road intelligence, plotted live.</p></div>
+            <aside class="route-card"><div class="route-top"><span class="route-dot"></span><div><small>ACTIVE TRACK</small><strong>Bus 07 · Ring Road</strong></div><span class="route-live">LIVE</span></div><div class="route-line"><span class="start-dot"></span><span></span><span class="end-dot"></span></div><div class="route-stops"><div><small>START</small><strong>University Gate</strong></div><div><small>END</small><strong>Central Depot</strong></div></div><div class="hazard-summary"><strong id="mapHazardCount">0</strong><span>road events in this session</span></div></aside>
+            <aside class="map-controls"><div class="panel-kicker">BASE MAP</div><label><input type="radio" name="mapType" checked onchange="changeMapType('normal')"> Street</label><label><input type="radio" name="mapType" onchange="changeMapType('satellite')"> Satellite</label><div class="panel-divider"></div><div class="panel-kicker">PLOT LAYERS</div><div id="layerList"></div></aside>
+        </section>
+
+        <section id="page-4" class="page analysis-page"><div class="page-heading"><div><p class="eyebrow">04 / COMMAND INSIGHT</p><h1>Road condition analysis</h1><p class="muted">A live report for proactive maintenance and safer public transport.</p></div><button class="export-button" onclick="window.print()">Export report ↗</button></div><div class="analysis-intro"><div><strong>Urban sensing mission</strong><p>GeoPath turns bus-mounted cameras into mobile sensing units. The current route is being scanned for defects, infrastructure gaps, traffic density and vulnerable road users.</p></div><div class="mission-meta"><span>SESSION</span><strong id="analysisSession">LIVE / 00:00</strong><span>LAST SYNC</span><strong id="lastSync">--:--:--</strong></div></div><div id="statGrid" class="stat-grid"></div><div class="analysis-grid"><article class="report-card"><div class="card-heading"><div><p class="eyebrow">INFRASTRUCTURE DEFICIENCY</p><h2>What needs attention</h2></div><span class="severity-key">HIGH · MEDIUM · LOW</span></div><div id="barChart" class="bar-chart"></div></article><article class="report-card"><div class="card-heading"><div><p class="eyebrow">MODEL TAXONOMY</p><h2>21-class coverage</h2></div></div><div class="taxonomy" id="taxonomy"></div></article></div><section class="event-logs"><article class="report-card event-log"><div class="card-heading"><div><p class="eyebrow">ROAD USERS</p><h2>Person and vehicle detections</h2></div></div><div class="table-scroll"><table><thead><tr><th>Timestamp</th><th>Person / vehicle</th><th>Vehicle type</th><th>Numberplate</th><th>Longitude</th><th>Latitude</th><th>Camera device</th></tr></thead><tbody id="vehicleEventRows"><tr><td colspan="7" class="empty-cell">Waiting for detections...</td></tr></tbody></table></div></article><article class="report-card event-log"><div class="card-heading"><div><p class="eyebrow">ROAD DEFECTS</p><h2>Pothole and road damage events</h2></div></div><div class="table-scroll"><table><thead><tr><th>Timestamp</th><th>Pothole / road damage</th><th>Longitude</th><th>Latitude</th><th>Area (px²)</th><th>Camera device</th></tr></thead><tbody id="roadEventRows"><tr><td colspan="6" class="empty-cell">Waiting for road defects...</td></tr></tbody></table></div></article></section></section>
+    </main>
+
+    <nav class="bottom-nav"><button class="nav-item active" onclick="showPage(1)"><span>◉</span><small>RGB CAM</small></button><button class="nav-item" onclick="showPage(2)"><span>✦</span><small>AI CAM</small></button><button class="nav-item" onclick="showPage(3)"><span>⌖</span><small>PATHMAP</small></button><button class="nav-item" onclick="showPage(4)"><span>▥</span><small>ANALYSIS</small></button></nav>
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
