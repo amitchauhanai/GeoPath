@@ -6,6 +6,7 @@ const WebSocket = require('ws');
 const FormData = require('form-data');
 const fetch = require('node-fetch');
 
+const aiBackendUrl = process.env.AI_BACKEND_URL || 'http://192.168.1.37:8000';
 const app = express();
 app.use(cors());
 app.use(express.static(path.join(__dirname, 'public'))); // Serve frontend files
@@ -71,7 +72,7 @@ wss.on('connection', (ws) => {
                     const formData = new FormData();
                     formData.append('file', message, { filename: 'frame.jpg', contentType: 'image/jpeg' });
 
-                    const response = await fetch(`http://10.34.66.150:8000/process_frame?mode=${currentAIMode}`, {
+                    const response = await fetch(`${aiBackendUrl}/process_frame?mode=${currentAIMode}`, {
                         method: 'POST',
                         body: formData
                     });

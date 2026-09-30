@@ -1,0 +1,24 @@
+.git
+.venv
+**/.venv
+**/__pycache__
+**/*.pyc
+server_hub/node_modules
+models/**/videos
+models/**/__results___files
+models/**/plots
+models/**/reports
+models/**/results
+models/*
+!models/Road segment/
+!models/Road segment/models/
+!models/Road segment/models/best_yolo26_seg.pt
+!models/Vehicle_Number_Plate/
+!models/Vehicle_Number_Plate/yolo26n.pt
+!models/Vehicle_Person_YOLOv26/
+!models/Vehicle_Person_YOLOv26/yolov26_vehicle_person/
+!models/Vehicle_Person_YOLOv26/yolov26_vehicle_person/train_exp/
+!models/Vehicle_Person_YOLOv26/yolov26_vehicle_person/train_exp/weights/
+!models/Vehicle_Person_YOLOv26/yolov26_vehicle_person/train_exp/weights/best.pt
+!models/Road_Sign_YOLOv26*/
+!models/Road_Sign_YOLOv26*/best_detector.pt

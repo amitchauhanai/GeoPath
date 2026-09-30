@@ -1,4 +1,5 @@
-const serverUrl = 'ws://10.34.66.150:3000';
+const serverProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+const serverUrl = `${serverProtocol}://192.168.1.37:3000`;
 const ws = new WebSocket(serverUrl);
 const pages = document.querySelectorAll('.page');
 const navItems = document.querySelectorAll('.nav-item');
