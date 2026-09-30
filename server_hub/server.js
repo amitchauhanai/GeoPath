@@ -6,7 +6,7 @@ const WebSocket = require('ws');
 const FormData = require('form-data');
 const fetch = require('node-fetch');
 
-const aiBackendUrl = process.env.AI_BACKEND_URL || 'http://192.168.1.37:8000';
+const aiBackendUrl = process.env.AI_BACKEND_URL || 'https://geopath-frontend.onrender.com';
 const app = express();
 app.use(cors());
 app.use(express.static(path.join(__dirname, 'public'))); // Serve frontend files
@@ -55,80 +55,255 @@ function getCameraFramePayload(data) {
     return frameTypes.includes(frameType) || hasImageField || isEncodedImage ? payload : null;
 }
 
+
+async function processFrameWithAI(buffer) {
+    if (isProcessing) {
+        console.log('⏳ AI processing already in progress, skipping frame');
+        return;
+    }
+
+    isProcessing = true;
+
+    try {
+        console.log(`📸 Frame received: ${buffer.length} bytes`);
+
+        const formData = new FormData();
+
+        formData.append('file', buffer, {
+            filename: 'frame.jpg',
+            contentType: 'image/jpeg'
+        });
+
+        // AI backend URL
+        const aiUrl =
+            `${aiBackendUrl}/process_frame?mode=${currentAIMode}`;
+
+        console.log(`🤖 Sending frame to AI backend: ${aiUrl}`);
+        console.log(`🎯 AI mode: ${currentAIMode}`);
+
+        const response = await fetch(
+            aiUrl,
+            {
+                method: 'POST',
+                body: formData,
+                headers: formData.getHeaders()
+            }
+        );
+
+        console.log(`📡 AI backend response: ${response.status}`);
+
+        if (!response.ok) {
+            const errorText = await response.text().catch(() => '');
+            throw new Error(
+                `AI backend returned ${response.status} ${response.statusText} ${errorText}`
+            );
+        }
+
+        const aiBuffer = await response.buffer();
+
+        console.log(
+            `✅ AI processed frame successfully: ${aiBuffer.length} bytes`
+        );
+
+        const base64Frame =
+            `data:image/jpeg;base64,${aiBuffer.toString('base64')}`;
+
+        const detections =
+            response.headers.get('x-geopath-detections') || '{}';
+
+        const events =
+            response.headers.get('x-geopath-events') || '[]';
+
+        const plateDetectorAvailable =
+            response.headers.get('x-geopath-plate-available') === 'true';
+
+        console.log(`🔍 Detections: ${detections}`);
+        console.log(`🚨 Events: ${events}`);
+        console.log(
+            `🚘 Plate detector available: ${plateDetectorAvailable}`
+        );
+
+        dashboardClients.forEach(client => {
+
+            if (client.readyState === WebSocket.OPEN) {
+
+                client.send(JSON.stringify({
+                    type: 'ai_frame',
+                    data: base64Frame,
+                    detections: JSON.parse(detections),
+                    events: JSON.parse(events),
+                    gps: latestGPS,
+                    cameraDevice,
+                    plateDetectorAvailable
+                }));
+
+            }
+
+        });
+
+        console.log(
+            `📤 AI frame sent to ${dashboardClients.length} dashboard client(s)`
+        );
+
+    } catch (e) {
+
+        console.error('❌ AI Backend Error:', e.message);
+
+        if (e.cause) {
+            console.error('Cause:', e.cause);
+        }
+
+    } finally {
+
+        isProcessing = false;
+
+    }
+}
+
+
 wss.on('connection', (ws) => {
     console.log('Client connected');
 
     ws.on('message', async (message, isBinary) => {
+
+        // ==========================================
+        // BINARY CAMERA FRAME
+        // ==========================================
         if (isBinary) {
-            // 1. Raw Frame to RGB Page
+
+            console.log(`Binary camera frame received: ${message.length} bytes`);
+
+            // Send original frame to dashboard
             dashboardClients.forEach(client => {
-                if (client.readyState === WebSocket.OPEN) client.send(message, { binary: true });
+                if (client.readyState === WebSocket.OPEN) {
+                    client.send(message, { binary: true });
+                }
             });
 
-            // 2. Send to FastAPI for AI Processing
-            if (!isProcessing) {
-                isProcessing = true;
-                try {
-                    const formData = new FormData();
-                    formData.append('file', message, { filename: 'frame.jpg', contentType: 'image/jpeg' });
+            // Send frame to AI backend
+            await processFrameWithAI(message);
 
-                    const response = await fetch(`${aiBackendUrl}/process_frame?mode=${currentAIMode}`, {
-                        method: 'POST',
-                        body: formData
-                    });
-                    if (!response.ok) {
-                        throw new Error(`AI backend returned ${response.status}`);
-                    }
-                    const aiBuffer = await response.buffer();
-                    const base64Frame = `data:image/jpeg;base64,${aiBuffer.toString('base64')}`;
-                    const detections = response.headers.get('x-geopath-detections') || '{}';
-                    const events = response.headers.get('x-geopath-events') || '[]';
-                    const plateDetectorAvailable = response.headers.get('x-geopath-plate-available') === 'true';
+            return;
+        }
 
-                    // 3. AI Frame to Segmented Page
-                    dashboardClients.forEach(client => {
-                        if (client.readyState === WebSocket.OPEN) {
-                            client.send(JSON.stringify({ type: 'ai_frame', data: base64Frame, detections: JSON.parse(detections), events: JSON.parse(events), gps: latestGPS, cameraDevice, plateDetectorAvailable }));
-                        }
-                    });
-                } catch (e) {
-                    console.error("AI Backend Error:", e.message);
-                }
-                isProcessing = false;
-            }
-        } else {
-            // Text Data (GPS or Commands)
-            try {
-                const data = JSON.parse(message.toString());
-                if (data.type === 'dashboard') {
+        // ==========================================
+        // TEXT / JSON MESSAGE
+        // ==========================================
+        try {
+            const data = JSON.parse(message.toString());
+
+            if (data.type === 'dashboard') {
+
+                if (!dashboardClients.includes(ws)) {
                     dashboardClients.push(ws);
-                } else if (data.type === 'gps') {
-                    latestGPS = { latitude: parseFloat(data.latitude), longitude: parseFloat(data.longitude) };
-                    dashboardClients.forEach(client => {
-                        if (client.readyState === WebSocket.OPEN) client.send(JSON.stringify(data));
-                    });
-                } else if (data.type === 'change_mode') {
-                    currentAIMode = data.mode;
-                } else if (data.type === 'camera_device') {
-                    cameraDevice = String(data.name || 'Unknown camera');
-                } else {
-                    const frame = getCameraFramePayload(data);
-                    if (frame) relayCameraFrame(frame);
-                    else console.log(`Unrecognized WebSocket message: type=${data.type || 'none'}, keys=${Object.keys(data).join(',')}`);
                 }
-            } catch (e) {
-                const text = message.toString();
-                const isEncodedImage = isEncodedImagePayload(text);
-                if (isEncodedImage) relayCameraFrame(text);
-                else console.log('Ignored non-JSON WebSocket message');
+
+                console.log('Dashboard connected');
+
+            } else if (data.type === 'gps') {
+
+                latestGPS = {
+                    latitude: parseFloat(data.latitude),
+                    longitude: parseFloat(data.longitude)
+                };
+
+                dashboardClients.forEach(client => {
+                    if (client.readyState === WebSocket.OPEN) {
+                        client.send(JSON.stringify(data));
+                    }
+                });
+
+            } else if (data.type === 'change_mode') {
+
+                currentAIMode = data.mode;
+                console.log(`AI mode changed to: ${currentAIMode}`);
+
+            } else if (data.type === 'camera_device') {
+
+                cameraDevice = String(
+                    data.name || 'Unknown camera'
+                );
+
+                console.log(`Camera device: ${cameraDevice}`);
+
+            } else {
+
+                const frame = getCameraFramePayload(data);
+
+                if (frame) {
+
+                    console.log('Base64/JSON camera frame received');
+
+                    // Send to dashboard
+                    relayCameraFrame(frame);
+
+                    // Convert base64 image to Buffer
+                    const base64 = frame.replace(
+                        /^data:image\/[^;]+;base64,/,
+                        ''
+                    );
+
+                    const buffer = Buffer.from(
+                        base64,
+                        'base64'
+                    );
+
+                    // Send to AI
+                    await processFrameWithAI(buffer);
+
+                } else {
+
+                    console.log(
+                        `Unrecognized WebSocket message: type=${data.type || 'none'}, keys=${Object.keys(data).join(',')}`
+                    );
+
+                }
+            }
+
+        } catch (e) {
+
+            const text = message.toString();
+
+            if (isEncodedImagePayload(text)) {
+
+                console.log('Raw base64 camera frame received');
+
+                relayCameraFrame(text);
+
+                const base64 = text.replace(
+                    /^data:image\/[^;]+;base64,/,
+                    ''
+                );
+
+                const buffer = Buffer.from(
+                    base64,
+                    'base64'
+                );
+
+                await processFrameWithAI(buffer);
+
+            } else {
+
+                console.log(
+                    'Ignored non-JSON WebSocket message'
+                );
+
             }
         }
     });
 
     ws.on('close', () => {
-        dashboardClients = dashboardClients.filter(client => client !== ws);
+
+        dashboardClients =
+            dashboardClients.filter(
+                client => client !== ws
+            );
+
+        console.log('Client disconnected');
     });
 });
 
-const PORT = 3000;
-server.listen(PORT, () => console.log(`Hub Server running on port ${PORT}`));
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`Hub Server running on port ${PORT}`);
+});
